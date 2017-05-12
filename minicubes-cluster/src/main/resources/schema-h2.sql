@@ -1,12 +1,14 @@
-CREATE TABLE minicube (
-  dim_the_date      INT            NOT NULL,
-  dim_tradeId       INT            NOT NULL,
-  dim_productLineId INT            NOT NULL,
-  dim_postId        INT            NOT NULL,
-  csm               DECIMAL(11, 8) NOT NULL,
-  cash              DECIMAL(10, 8) NOT NULL,
-  click             BIGINT         NOT NULL,
-  shw               BIGINT         NOT NULL,
-  _merge_flag_      INT            NOT NULL,
-  PRIMARY KEY (dim_the_date, dim_tradeId, dim_productLineId, dim_postId)
+DROP TABLE IF EXISTS MINICUBE;
+
+CREATE TABLE MINICUBE (
+  DIM_THE_DATE      INT            NOT NULL,
+  DIM_TRADEID       INT            NOT NULL,
+  DIM_PRODUCTLINEID INT            NOT NULL,
+  DIM_POSTID        INT            NOT NULL,
+  CSM               DECIMAL(11, 8) NOT NULL,
+  CASH              DECIMAL(10, 8) NOT NULL,
+  CLICK             BIGINT         NOT NULL,
+  SHW               BIGINT         NOT NULL,
+  _MERGE_FLAG_      INT            NOT NULL,
+  PRIMARY KEY (DIM_THE_DATE, DIM_TRADEID, DIM_PRODUCTLINEID, DIM_POSTID)
 );

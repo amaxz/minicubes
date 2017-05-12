@@ -15,20 +15,19 @@
  */
 package com.github.totyumengr.minicubes.cluster;
 
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ILock;
 import com.mashape.unirest.http.Unirest;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author mengran
@@ -37,7 +36,8 @@ public class TimeSeriesMiniCubeTest {
 
     @BeforeClass
     public static void beforeClass() {
-        Application.main(new String[0]);
+        if (DiscardListener.applicationContext == null)
+            Application.main(new String[0]);
     }
 
     @Test

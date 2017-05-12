@@ -15,13 +15,13 @@
  */
 package com.github.totyumengr.minicubes.cluster;
 
-import java.util.concurrent.CountDownLatch;
-
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.SpringApplicationRunListener;
 import org.springframework.boot.context.embedded.EmbeddedWebApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
+
+import java.util.concurrent.CountDownLatch;
 
 public class DiscardListener implements SpringApplicationRunListener {
 
@@ -36,7 +36,7 @@ public class DiscardListener implements SpringApplicationRunListener {
     }
 
     @Override
-    public void started() {
+    public void starting() {
 
     }
 

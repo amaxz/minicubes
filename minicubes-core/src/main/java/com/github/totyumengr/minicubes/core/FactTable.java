@@ -152,6 +152,7 @@ public class FactTable {
      * @author mengran
      */
     public static class FactTableBuilder {
+
         private static final ThreadLocal<FactTable> IN_BUILDING = new ThreadLocal<>();
 
         private static List<FactTableBuilderUserDefineDimProvider> providers = new ArrayList<>();

@@ -117,15 +117,19 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
     private HazelcastInstance hazelcastInstance;
 
     private String hzGroupName;
+
     @Value("${hazelcast.executor.timeout}")
     private int hzExecutorTimeout;
 
     @Autowired
     private DataSource dataSource;
+
     @Value("${minicube.builder.mergeFlagColumn}")
     private String mergeFlagColumn;
+
     @Value("${minicube.builder.sourceSql}")
     private String factSourceSql;
+
     @Value("${minicube.measure.fromIndex}")
     private int splitIndex = -1;
 

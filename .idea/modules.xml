@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/minicubes-cluster/minicubes-cluster.iml" filepath="$PROJECT_DIR$/minicubes-cluster/minicubes-cluster.iml" />
+      <module fileurl="file://$PROJECT_DIR$/minicubes-core/minicubes-core.iml" filepath="$PROJECT_DIR$/minicubes-core/minicubes-core.iml" />
+      <module fileurl="file://$PROJECT_DIR$/minicubes-fxclient/minicubes-fxclient.iml" filepath="$PROJECT_DIR$/minicubes-fxclient/minicubes-fxclient.iml" />
+      <module fileurl="file://$PROJECT_DIR$/minicubes-pom.iml" filepath="$PROJECT_DIR$/minicubes-pom.iml" />
+    </modules>
+  </component>
+</project>

@@ -7,7 +7,7 @@
         <groupId>com.github.totyumengr</groupId>
         <artifactId>minicubes-pom</artifactId>
         <relativePath>../</relativePath>
-        <version>0.3-SNAPSHOT</version>
+        <version>0.3.1</version>
     </parent>
     <artifactId>minicubes-fxclient</artifactId>
     <version>0.1-SNAPSHOT</version>
