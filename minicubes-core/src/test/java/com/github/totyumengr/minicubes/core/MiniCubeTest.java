@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,15 +44,14 @@ import com.github.totyumengr.minicubes.core.FactTable.FactTableBuilderUserDefine
 
 /**
  * @author mengran
- *
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class MiniCubeTest {
-    
+
     private static final Logger LOGGER = LoggerFactory.getLogger(MiniCubeTest.class);
-    
+
     private static MiniCube miniCube;
-    
+
     public static class UserDefineDimProvider implements FactTableBuilderUserDefineDimProvider {
 
         @Override
@@ -61,8 +61,8 @@ public class MiniCubeTest {
 
         @Override
         public LinkedHashMap<String, String> getUserDefineDimConfig() {
-            
-            LinkedHashMap<String, String> map = new LinkedHashMap<String, String>(2);
+
+            LinkedHashMap<String, String> map = new LinkedHashMap<>(2);
             map.put("shw_segment", "function shw_segment() {"
                     + " var i_shw = new Number(shw);"
                     + " if (i_shw === null) {return 0;}"
@@ -79,27 +79,27 @@ public class MiniCubeTest {
                     + "}");
             return map;
         }
-        
+
     }
-    
+
     @BeforeClass
     public static void prepare() throws Throwable {
-        
+
         Assert.assertTrue(new DoubleDouble(1926).doubleValue() == 1926.0);
         Assert.assertTrue(new DoubleDouble("1926").doubleValue() == 0.1926);
         Assert.assertTrue(new DoubleDouble("1926.000").doubleValue() == 1926.0);
-        
+
         String dataFile = System.getProperty("dataFile", "data_fc_bd_qs_day_detail_20140606.data");
-        
+
         FactTableBuilder builder = new FactTableBuilder().build("MiniCubeTest")
-            .addDimColumns(Arrays.asList(new String[] {"the_date", "tradeId", "productLineId", "postId"}))
-            .addIndColumns(Arrays.asList(new String[] {"csm", "cash", "click", "shw"}));
-        
+                .addDimColumns(Arrays.asList("the_date", "tradeId", "productLineId", "postId"))
+                .addIndColumns(Arrays.asList("csm", "cash", "click", "shw"));
+
         long startTime = System.currentTimeMillis();
         LOGGER.info("prepare {} - start: {}", dataFile, startTime);
         ClassPathResource resource = new ClassPathResource(dataFile);
         BufferedReader reader = new BufferedReader(new InputStreamReader(resource.getInputStream()));
-        String line = null;
+        String line;
         Integer index = 0;
         while ((line = reader.readLine()) != null) {
             String[] split = line.split("\t");
@@ -107,35 +107,33 @@ public class MiniCubeTest {
             if (index % 100000 == 0) {
                 LOGGER.debug("Load {} records", index);
             }
-            builder.addDimDatas(index, Arrays.asList(new Integer[] {
-                Integer.valueOf(split[0]), Integer.valueOf(split[1]), Integer.valueOf(split[2]), Integer.valueOf(split[3])}));
-            builder.addIndDatas(index, Arrays.asList(new DoubleDouble[] {
-                new DoubleDouble(split[4]), new DoubleDouble(split[5]), 
-                    new DoubleDouble(split[6] + ".00000000"), new DoubleDouble(split[7] + ".00000000")}));
+            builder.addDimDatas(index, Arrays.asList(Integer.valueOf(split[0]), Integer.valueOf(split[1]), Integer.valueOf(split[2]), Integer.valueOf(split[3])));
+            builder.addIndDatas(index, Arrays.asList(new DoubleDouble(split[4]), new DoubleDouble(split[5]),
+                    new DoubleDouble(split[6] + ".00000000"), new DoubleDouble(split[7] + ".00000000")));
         }
         reader.close();
         LOGGER.info("prepare - end: {}, {}ms", System.currentTimeMillis(), System.currentTimeMillis() - startTime);
-        
+
         miniCube = new MiniCube(builder.done());
     }
-    
+
     @Test
     public void test_0_1_UserDefineDims_shw_segment() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("shw_segment", Arrays.asList(new Integer[] {0, 1, 2, 3}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("shw_segment", Arrays.asList(0, 1, 2, 3));
         miniCube.setParallelMode(true);
         for (int i = 0; i < 5; i++) {
             Assert.assertEquals("3336028826.00000000", miniCube.sum("shw", filter).toString());
             Thread.sleep(1000L);
         }
     }
-    
+
     @Test
     public void test_1_1_Sum_20140606() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("the_date", Arrays.asList(new Integer[] {20140606}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("the_date", Collections.singletonList(20140606));
         miniCube.setParallelMode(false);
         for (int i = 0; i < 5; i++) {
             Assert.assertEquals("138240687.91500000", miniCube.sum("csm", filter).toString());
@@ -147,32 +145,30 @@ public class MiniCubeTest {
             Thread.sleep(1000L);
         }
     }
-    
+
     @Test
     public void test_1_2_Sum_filter_tradeId() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("tradeId", Arrays.asList(new Integer[] {
-            3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299, 
-            3204, 3203, 3202, 3201, 3211}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("tradeId", Arrays.asList(3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299,
+                3204, 3203, 3202, 3201, 3211));
         LOGGER.info(new ObjectMapper().writeValueAsString(filter));
-        
-        
+
+
         for (int i = 0; i < 5; i++) {
             Assert.assertEquals("41612111.56000000", miniCube.sum("csm", filter).toString());
             Thread.sleep(1000L);
         }
-        
+
     }
-    
+
     @Test
     public void test_2_1_Group_tradeId_filter_tradeId() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("tradeId", Arrays.asList(new Integer[] {
-            3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299, 
-            3204, 3203, 3202, 3201, 3211}));
-        
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("tradeId", Arrays.asList(3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299,
+                3204, 3203, 3202, 3201, 3211));
+
         for (int i = 0; i < 5; i++) {
             Map<Integer, BigDecimal> group = miniCube.sum("csm", "tradeId", filter);
             Assert.assertEquals("543138.14000000", group.get(3201).toString());
@@ -191,11 +187,12 @@ public class MiniCubeTest {
             Thread.sleep(1000L);
         }
     }
-    
+
     @Test
     public void test_2_2_Group_tradeId() throws Throwable {
-        
+
         miniCube.setParallelMode(true);
+        //noinspection Duplicates
         for (int i = 0; i < 5; i++) {
             Map<Integer, BigDecimal> group = miniCube.sum("csm", "tradeId", null);
             Assert.assertEquals(210, group.size());
@@ -207,6 +204,7 @@ public class MiniCubeTest {
             Thread.sleep(1000L);
         }
         miniCube.setParallelMode(false);
+        //noinspection Duplicates
         for (int i = 0; i < 5; i++) {
             Map<Integer, BigDecimal> group = miniCube.sum("csm", "tradeId", null);
             Assert.assertEquals(210, group.size());
@@ -219,114 +217,110 @@ public class MiniCubeTest {
         }
         miniCube.setParallelMode(true);
     }
-    
+
     @Test
     public void test_2_3_Zero_BigDecimail() throws Throwable {
-        
+
         BigDecimal zero = new BigDecimal(0).setScale(8, BigDecimal.ROUND_HALF_UP);
         System.out.println(zero);
     }
-    
+
     @Test
     public void test_3_1_BitmapIndex_Sum_20140606() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("the_date", Arrays.asList(new Integer[] {20140606}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("the_date", Collections.singletonList(20140606));
         for (int i = 0; i < 3; i++) {
             Assert.assertEquals("138240687.91500000", miniCube.sum("csm", filter).toString());
             Thread.sleep(1000L);
         }
     }
-    
+
     @Test
     public void test_3_2_BitmapIndex_Sum_filter_tradeId() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("tradeId", Arrays.asList(new Integer[] {
-            3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299, 
-            3204, 3203, 3202, 3201, 3211}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("tradeId", Arrays.asList(3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299,
+                3204, 3203, 3202, 3201, 3211));
         LOGGER.info(new ObjectMapper().writeValueAsString(filter));
-        
-        
+
+
         for (int i = 0; i < 5; i++) {
             Assert.assertEquals("41612111.56000000", miniCube.sum("csm", filter).toString());
             Thread.sleep(1000L);
         }
-        
+
     }
-    
+
     @Test
     public void test_4_1_DoubleDouble_Sum_20140606() throws Throwable {
-        
         Assert.assertEquals("138240687.91500000", miniCube.sum("csm").toString());
     }
-    
+
     @Test
     public void test_5_1_Distinct_20140606() throws Throwable {
-        
+
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
+        Map<String, List<Integer>> filter = new HashMap<>(1);
         Map<Integer, RoaringBitmap> distinct = miniCube.distinct("postId", true, "tradeId", filter);
         stopWatch.stop();
-        
+
         Assert.assertEquals(210, distinct.size());
         Assert.assertEquals(3089, distinct.get(1601).getCardinality());
         Assert.assertEquals(1825, distinct.get(1702).getCardinality());
         Assert.assertEquals(2058, distinct.get(-2).getCardinality());
-        
+
         LOGGER.info(stopWatch.getTotalTimeSeconds() + " used for distinct result {}", distinct.toString());
     }
-    
+
     @Test
     public void test_5_2_DistinctCount_20140606() throws Throwable {
-        
+
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("tradeId", Arrays.asList(new Integer[] {
-            3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299, 
-            3204, 3203, 3202, 3201, 3211}));
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("tradeId", Arrays.asList(3205, 3206, 3207, 3208, 3209, 3210, 3212, 3299,
+                3204, 3203, 3202, 3201, 3211));
         Map<Integer, RoaringBitmap> distinct = miniCube.distinct("postId", true, "tradeId", filter);
         stopWatch.stop();
-        
+
         Assert.assertEquals(13, distinct.size());
         Assert.assertEquals(277, distinct.get(3209).getCardinality());
         Assert.assertEquals(186, distinct.get(3211).getCardinality());
         Assert.assertEquals(464, distinct.get(3206).getCardinality());
         LOGGER.info(stopWatch.getTotalTimeSeconds() + " used for distinct result {}", distinct.toString());
-        
+
     }
-    
+
     @Test
     public void test_6_1_merge() {
-        
+
         FactTableBuilder builder = new FactTableBuilder().build("MiniCubeTest-merge")
-                .addDimColumns(Arrays.asList(new String[] {"the_date", "tradeId", "productLineId", "postId"}))
-                .addIndColumns(Arrays.asList(new String[] {"csm", "cash", "click", "shw"}));
-        
-        builder.addDimDatas(Integer.MAX_VALUE, Arrays.asList(new Integer[] {20140607, 1, 1, 1}));
-        builder.addIndDatas(Integer.MAX_VALUE, Arrays.asList(new DoubleDouble[] {
-                new DoubleDouble(123.123), new DoubleDouble(124.124), new DoubleDouble(123), new DoubleDouble(124)}));
+                .addDimColumns(Arrays.asList("the_date", "tradeId", "productLineId", "postId"))
+                .addIndColumns(Arrays.asList("csm", "cash", "click", "shw"));
+
+        builder.addDimDatas(Integer.MAX_VALUE, Arrays.asList(20140607, 1, 1, 1));
+        builder.addIndDatas(Integer.MAX_VALUE, Arrays.asList(new DoubleDouble(123.123), new DoubleDouble(124.124), new DoubleDouble(123), new DoubleDouble(124)));
         FactTable merge = builder.done();
         // Do merge
         BigDecimal original = miniCube.sum("csm");
         miniCube.merge(new MiniCube(merge));
-        
+
         Assert.assertEquals(original.add(new BigDecimal(123.123).setScale(
                 Aggregations.IND_SCALE, BigDecimal.ROUND_HALF_UP)), miniCube.sum("csm"));
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("the_date", Arrays.asList(new Integer[] {20140606}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("the_date", Collections.singletonList(20140606));
         miniCube.setParallelMode(false);
         Assert.assertEquals("138240687.91500000", miniCube.sum("csm", filter).toString());
     }
-    
+
     @Test
     public void test_7_1_Count_20140606() throws Throwable {
-        
-        Map<String, List<Integer>> filter = new HashMap<String, List<Integer>>(1);
-        filter.put("the_date", Arrays.asList(new Integer[] {20140606}));
+
+        Map<String, List<Integer>> filter = new HashMap<>(1);
+        filter.put("the_date", Collections.singletonList(20140606));
         miniCube.setParallelMode(false);
         for (int i = 0; i < 5; i++) {
             Assert.assertEquals(903885L, miniCube.count("csm", filter));
@@ -338,5 +332,5 @@ public class MiniCubeTest {
             Thread.sleep(1000L);
         }
     }
-    
+
 }

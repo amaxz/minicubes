@@ -25,44 +25,44 @@ import javafx.stage.Stage;
 
 /**
  * Main class.
- * @author mengran
  *
+ * @author mengran
  */
 public class ClientApp extends Application {
-    
+
     private Stage stage;
-    
+
     @Override
     public void start(Stage primaryStage) throws Exception {
-        
+
         this.stage = primaryStage;
-        
+
         showCpuIdel();
-        
+
         primaryStage.show();
     }
-    
+
     private void showCpuIdel() {
-        
+
         String cpuIdel = "cpuIdel.fxml";
         FXMLLoader loader = new FXMLLoader();
         loader.setLocation(ClientApp.class.getResource(cpuIdel));
-        
+
         try {
             AnchorPane pane = (AnchorPane) loader.load();
             Scene scene = new Scene(pane);
             stage.setScene(scene);
-            
+
             stage.setTitle("CPU Idel - Performance Testing");
         } catch (IOException e) {
             throw new RuntimeException("Fail to load fxml resource " + cpuIdel, e);
         }
-        
+
     }
-    
+
     public static void main(String[] args) {
         // Entry point if not javafx launcher
         launch(args);
     }
-    
+
 }

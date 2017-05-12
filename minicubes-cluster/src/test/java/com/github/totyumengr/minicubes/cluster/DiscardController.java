@@ -30,30 +30,30 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 /**
  * @author mengran
- *
  */
 @Controller
 public class DiscardController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DiscardController.class);
-    
+
     public static final String OK = "ok";
-    
+
     /**
      * Only for dummy method
      */
     @Autowired
     private DataSource dataSource;
-    
-    @RequestMapping(value="/dummyMerge", method={RequestMethod.POST, RequestMethod.GET})
-    public @ResponseBody String mergePrepare(@NotBlank @RequestParam String timeSeries, @RequestParam String sql) {
-        
+
+    @RequestMapping(value = "/dummyMerge", method = {RequestMethod.POST, RequestMethod.GET})
+    public @ResponseBody
+    String mergePrepare(@NotBlank @RequestParam String timeSeries, @RequestParam String sql) {
+
         LOGGER.info("Try to merge data to {}.", sql, timeSeries);
         JdbcTemplate template = new JdbcTemplate(dataSource);
         template.afterPropertiesSet();
         template.execute(sql);
         LOGGER.info("Success for merge data to {}.", sql, timeSeries);
-        
+
         return OK;
     }
 }

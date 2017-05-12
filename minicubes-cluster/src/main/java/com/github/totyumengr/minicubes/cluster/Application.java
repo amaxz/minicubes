@@ -25,20 +25,20 @@ import org.springframework.util.ObjectUtils;
 
 /**
  * Spring-Boot app entry point. Will not package for dependency.
- * @author mengran
  *
+ * @author mengran
  */
 @Configuration
 @EnableAutoConfiguration
 @ComponentScan
 public class Application {
-    
+
     private static final Logger LOGGER = LoggerFactory.getLogger(Application.class);
-    
+
     public static void main(String[] args) {
-        
+
         LOGGER.info("Start application with args {}", ObjectUtils.getDisplayString(args));
-        
+
         SpringApplication.run(Application.class, args);
     }
 }

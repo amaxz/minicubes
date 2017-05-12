@@ -18,7 +18,6 @@ package com.github.totyumengr.minicubes.cluster;
 
 /**
  * @author mengran
- *
  */
 public class TimeSeriesMiniCubeOneTest extends TimeSeriesMiniCubeTest {
 

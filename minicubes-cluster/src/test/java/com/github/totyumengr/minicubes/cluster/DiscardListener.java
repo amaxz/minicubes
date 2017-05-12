@@ -27,9 +27,9 @@ public class DiscardListener implements SpringApplicationRunListener {
 
     static EmbeddedWebApplicationContext applicationContext;
     static CountDownLatch cdl = new CountDownLatch(1);
-    
+
     /**
-     * 
+     *
      */
     public DiscardListener(SpringApplication application, String[] args) {
         super();
@@ -37,30 +37,30 @@ public class DiscardListener implements SpringApplicationRunListener {
 
     @Override
     public void started() {
-        
+
     }
 
     @Override
     public void environmentPrepared(ConfigurableEnvironment environment) {
-        
+
     }
 
     @Override
     public void contextPrepared(ConfigurableApplicationContext context) {
-        
+
     }
 
     @Override
     public void contextLoaded(ConfigurableApplicationContext context) {
-        
+
     }
 
     @Override
     public void finished(ConfigurableApplicationContext context,
-            Throwable exception) {
-        
+                         Throwable exception) {
+
         applicationContext = (EmbeddedWebApplicationContext) context;
         cdl.countDown();
     }
-    
+
 }

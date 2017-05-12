@@ -23,10 +23,10 @@ import org.roaringbitmap.RoaringBitmap;
 
 /**
  * <p>FIXME: Need re-design aggregations API, make it fluent and rich for calculating.
- * 
+ * <p>
  * <p>Define supported calculation operations.
- * @author mengran
  *
+ * @author mengran
  */
 public interface Aggregations {
 
@@ -34,85 +34,92 @@ public interface Aggregations {
      * Calculation scale
      */
     int IND_SCALE = 8;
-    
+
     /**
      * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube}".
+     *
      * @param indName indicate name for sum
      * @return result of sum operation
      */
     BigDecimal sum(String indName);
-    
+
     /**
-     * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE 
+     * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)}".
-     * @param indName indicate name for sum
+     *
+     * @param indName    indicate name for sum
      * @param filterDims filter dimensions
      * @return result of sum operation
      */
     BigDecimal sum(String indName, Map<String, List<Integer>> filterDims);
-    
+
     /**
-     * Sum calculation of given indicate with filter and grouper. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE 
+     * Sum calculation of given indicate with filter and grouper. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)} group by {dimension3}".
-     * @param indName indicate name for sum
+     *
+     * @param indName        indicate name for sum
      * @param groupByDimName group by dimensions
-     * @param filterDims filter dimensions
+     * @param filterDims     filter dimensions
      * @return result of sum operation
      */
     Map<Integer, BigDecimal> sum(String indName, String groupByDimName, Map<String, List<Integer>> filterDims);
 
     /**
      * Count calculation of given indicate with filter. It equal to "SELECT COUNT({indName}) FROM {fact table of cube}".
+     *
      * @param indName indicate name for count
      * @return result of count operation
      * @since 0.3
      */
     long count(String indName);
-    
+
     /**
-     * Count calculation of given indicate with filter. It equal to "SELECT COUNT({indName}) FROM {fact table of cube} WHERE 
+     * Count calculation of given indicate with filter. It equal to "SELECT COUNT({indName}) FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)}".
-     * @param indName indicate name for count
+     *
+     * @param indName    indicate name for count
      * @param filterDims filter dimensions
      * @return result of count operation
      * @since 0.3
      */
     long count(String indName, Map<String, List<Integer>> filterDims);
-    
+
     /**
-     * Count calculation of given indicate with filter and grouper. It equal to "SELECT COUNT({indName}) FROM {fact table of cube} WHERE 
+     * Count calculation of given indicate with filter and grouper. It equal to "SELECT COUNT({indName}) FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)} group by {dimension3}".
-     * @param indName indicate name for count
+     *
+     * @param indName        indicate name for count
      * @param groupByDimName group by dimensions
-     * @param filterDims filter dimensions
+     * @param filterDims     filter dimensions
      * @return result of count operation
      * @since 0.3
      */
     Map<Integer, Long> count(String indName, String groupByDimName, Map<String, List<Integer>> filterDims);
 
-    
+
     /**
-     * Distinct calculation of given indicate with filter and grouper. It equal to "SELECT DISTINCT {indName} FROM {fact table of cube} WHERE 
+     * Distinct calculation of given indicate with filter and grouper. It equal to "SELECT DISTINCT {indName} FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)} group by {dimension3}".
-     * @param distinctName name for distinct
-     * @param isDim distinct dimension or not
+     *
+     * @param distinctName   name for distinct
+     * @param isDim          distinct dimension or not
      * @param groupByDimName group by dimensions
-     * @param filterDims filter dimensions
+     * @param filterDims     filter dimensions
      * @return result of distinct operation
      */
     Map<Integer, RoaringBitmap> distinct(String distinctName, boolean isDim, String groupByDimName, Map<String, List<Integer>> filterDims);
-    
-    /** 
+
+    /**
      * distinct-count calculation, depends {@link #distinct(String, boolean, String, Map)} operation.
-     * @param distinctName same to distinct
-     * @param isDim same to distinct
+     *
+     * @param distinctName   same to distinct
+     * @param isDim          same to distinct
      * @param groupByDimName same to distinct
-     * @param filterDims same to distinct
-     * @return result of distinct-count operation 
-     * 
+     * @param filterDims     same to distinct
+     * @return result of distinct-count operation
      * @see com.github.totyumengr.minicubes.core.Aggregations#distinct(String, boolean, String, Map)
      */
     Map<Integer, Integer> discnt(String distinctName, boolean isDim,
-            String groupByDimName, Map<String, List<Integer>> filterDims);
-    
+                                 String groupByDimName, Map<String, List<Integer>> filterDims);
+
 }

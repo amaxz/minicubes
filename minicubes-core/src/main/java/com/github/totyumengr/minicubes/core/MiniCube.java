@@ -16,14 +16,13 @@
 package com.github.totyumengr.minicubes.core;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -37,29 +36,27 @@ import com.github.totyumengr.minicubes.core.FactTable.Record;
 
 /**
  * In-memory cube base on java8 stream feature and use memory calculation for best performance(millisecond level).
- * Distributed architect is important, {@link MiniCube} design as unit participant, the one logic level cube will 
+ * Distributed architect is important, {@link MiniCube} design as unit participant, the one logic level cube will
  * be API for users.
- * 
+ * <p>
  * <p>{@link MiniCube} design for easily fast transfer between cluster nodes to support fail-safe feature.
- * 
+ * <p>
  * <p>Add bitmap index for speed up aggregated calculation, use <a href="https://github.com/lemire/RoaringBitmap">RoaringBitmap</a>.
- * 
- * @author mengran
- * 
- * @see #DUMMY_FILTER_DIM
  *
+ * @author mengran
+ * @see #DUMMY_FILTER_DIM
  */
 public class MiniCube implements Aggregations {
-    
+
     private static final Logger LOGGER = LoggerFactory.getLogger(MiniCube.class);
-    
+
     /**
      * Take care this value, make sure do not has this values in data-set.
      */
-    public static final int DUMMY_FILTER_DIM = -999999999;
-    
-    FactTable factTable;
-    
+    private static final int DUMMY_FILTER_DIM = -999999999;
+
+    private FactTable factTable;
+
     private volatile boolean parallelMode = true;
 
     // FIXME: Add dimension table
@@ -67,12 +64,12 @@ public class MiniCube implements Aggregations {
         super();
         this.factTable = factTable;
     }
-    
+
     public void setParallelMode(boolean parallelMode) {
         this.parallelMode = parallelMode;
         LOGGER.info("Set stream's mode from {} to {} of {}", this.parallelMode, parallelMode, factTable.meta.name);
     }
-    
+
     public void merge(MiniCube merge) {
         if (merge == null) {
             LOGGER.info("Do nothing when merge object is null");
@@ -80,26 +77,25 @@ public class MiniCube implements Aggregations {
         }
         this.factTable.merge(merge.factTable);
     }
-    
+
     // ---------------------------- Aggregation API ----------------------------
 
     private Stream<Entry<Integer, Record>> filter(Map<String, List<Integer>> filterDims) {
-        
+
         if (filterDims == null) {
-            filterDims = new HashMap<String, List<Integer>>(0);
+            filterDims = new HashMap<>(0);
         }
-        
+
         Map<String, Object> data = factTable.getData();
         @SuppressWarnings("unchecked")
         Map<Integer, Record> records = (Map<Integer, Record>) data.get("records");
         @SuppressWarnings("unchecked")
-        Map<String, RoaringBitmap> bitmapIndex = (Map<String, RoaringBitmap>) data.get("bitmapIndex"); 
-        
-        Stream<Entry<Integer, Record>> stream = parallelMode ? records.entrySet().parallelStream() 
+        Map<String, RoaringBitmap> bitmapIndex = (Map<String, RoaringBitmap>) data.get("bitmapIndex");
+
+        Stream<Entry<Integer, Record>> stream = parallelMode ? records.entrySet().parallelStream()
                 : records.entrySet().stream();
-        
-        List<Predicate<Entry<Integer, Record>>> filters = new ArrayList<Predicate<Entry<Integer, Record>>>(filterDims.size());
-        
+
+
         RoaringBitmap ands = null;
         for (Entry<String, List<Integer>> entry : filterDims.entrySet()) {
             RoaringBitmap ors = new RoaringBitmap();
@@ -133,127 +129,121 @@ public class MiniCube implements Aggregations {
             } else {
                 final RoaringBitmap m = ands;
                 LOGGER.info("Filter record IDs count {}", ands.getCardinality());
-                return stream.filter(
-                        new Predicate<Entry<Integer, Record>>() {
-                            @Override
-                            public boolean test(Entry<Integer, Record> t) {
-                                return m.contains(t.getKey());
-                            }
-                        });
+                return stream.filter(t -> m.contains(t.getKey()));
             }
         }
-        
+
         Predicate<Entry<Integer, Record>> andFilter = i -> i.getKey() != DUMMY_FILTER_DIM;
+        /*List<Predicate<Entry<Integer, Record>>> filters = new ArrayList<>(filterDims.size());
         for (Predicate<Entry<Integer, Record>> filter : filters) {
             andFilter = andFilter.and(filter);
-        }
-        
+        }*/
+
         return stream.filter(andFilter);
     }
 
     /**
      * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube}".
+     *
      * @param indName indicate name for sum
      * @return result that formated using {@value #IND_SCALE}
      */
     @Override
     public BigDecimal sum(String indName) {
-        
+
         // Delegate to overload method
         return sum(indName, null);
     }
-    
+
     /**
-     * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE 
+     * Sum calculation of given indicate with filter. It equal to "SELECT SUM({indName}) FROM {fact table of cube} WHERE
      * {dimension1 IN (a, b, c)} AND {dimension2 IN (d, e, f)}".
-     * @param indName indicate name for sum
+     *
+     * @param indName    indicate name for sum
      * @param filterDims filter dimensions
      * @return result that formated using {@value #IND_SCALE}
      */
     @Override
     public BigDecimal sum(String indName, Map<String, List<Integer>> filterDims) {
-        
+
         long enterTime = System.currentTimeMillis();
-        
+
         Stream<Entry<Integer, Record>> stream = filter(filterDims);
         LOGGER.debug("Prepare predicate using {} ms.", System.currentTimeMillis() - enterTime);
-        
-        DoubleDouble sum = stream.map(
-            new Function<Entry<Integer, Record>, DoubleDouble>() {
-                @Override
-                public DoubleDouble apply(Entry<Integer, Record> t) {
-                    return t.getValue().getInd(indName);
-                }
-            }).reduce(new DoubleDouble(), (x, y) -> x.add(y));
-        
+
+        DoubleDouble sum = stream.map(t -> t.getValue().getInd(indName))
+                .reduce(new DoubleDouble(), DoubleDouble::add);
+
         enterTime = System.currentTimeMillis() - enterTime;
         LOGGER.info("Sum {} filter {} result {} using {} ms.", indName, filterDims, sum, enterTime);
-        
+
         return new BigDecimal(sum.toSciNotation()).setScale(IND_SCALE, BigDecimal.ROUND_HALF_UP);
     }
-    
+
     @Override
     public Map<Integer, BigDecimal> sum(String indName, String groupByDimName, Map<String, List<Integer>> filterDims) {
-        
+
         long enterTime = System.currentTimeMillis();
         Stream<Entry<Integer, Record>> stream = filter(filterDims);
-        
-        Map<Integer, BigDecimal> group = new HashMap<Integer, BigDecimal>();
-        stream.collect(Collectors.groupingBy(p->p.getValue().getDim(groupByDimName), Collectors.reducing(new DoubleDouble(), 
-                new Function<Entry<Integer, Record>, DoubleDouble>() {
-                    @Override
-                    public DoubleDouble apply(Entry<Integer, Record> t) {
-                        return t.getValue().getInd(indName);
-                    }
-                }, (x, y) -> x.add(y))))
-            .forEach((k, v) -> group.put(k, new BigDecimal(v.toSciNotation()).setScale(IND_SCALE, BigDecimal.ROUND_HALF_UP)));
-        
+
+        Map<Integer, BigDecimal> group = new HashMap<>();
+        Collector<Entry<Integer, Record>, ?, Map<Integer, DoubleDouble>> collector =
+                Collectors.groupingBy(
+                        p -> p.getValue().getDim(groupByDimName),
+                        Collectors.reducing(new DoubleDouble(), t -> t.getValue().getInd(indName), DoubleDouble::add)
+                );
+        stream.collect(collector).forEach((k, v) ->
+                group.put(k, new BigDecimal(v.toSciNotation()).setScale(IND_SCALE, BigDecimal.ROUND_HALF_UP))
+        );
+
         enterTime = System.currentTimeMillis() - enterTime;
-        LOGGER.debug("Group by {} sum {} filter {} result {} using {} ms.", groupByDimName, indName, filterDims, group, 
-                enterTime);
-        LOGGER.info("Group by {} sum {} filter {} result size {} using {} ms.", groupByDimName, indName, 
-                filterDims, group.size(), enterTime);
+
+        LOGGER.debug("Group by {} sum {} filter {} result {} using {} ms.",
+                groupByDimName, indName, filterDims, group, enterTime);
+        LOGGER.info("Group by {} sum {} filter {} result size {} using {} ms.",
+                groupByDimName, indName, filterDims, group.size(), enterTime);
+
         return group;
     }
-    
+
     @Override
     public long count(String indName) {
-        
+
         // Delegate to overload method
         return count(indName, null);
     }
 
     @Override
     public long count(String indName,
-            Map<String, List<Integer>> filterDims) {
-        
+                      Map<String, List<Integer>> filterDims) {
+
         long enterTime = System.currentTimeMillis();
-        
+
         Stream<Entry<Integer, Record>> stream = filter(filterDims);
         LOGGER.debug("Prepare predicate using {} ms.", System.currentTimeMillis() - enterTime);
-        
+
         Long count = stream.count();
-        
+
         enterTime = System.currentTimeMillis() - enterTime;
         LOGGER.info("Count {} filter {} result {} using {} ms.", indName, filterDims, count, enterTime);
-        
+
         return count;
     }
 
     @Override
     public Map<Integer, Long> count(String indName,
-            String groupByDimName, Map<String, List<Integer>> filterDims) {
-        
+                                    String groupByDimName, Map<String, List<Integer>> filterDims) {
+
         long enterTime = System.currentTimeMillis();
         Stream<Entry<Integer, Record>> stream = filter(filterDims);
-        
-        Map<Integer, Long> group = stream.collect(Collectors.groupingBy(p->p.getValue().getDim(groupByDimName), 
+
+        Map<Integer, Long> group = stream.collect(Collectors.groupingBy(p -> p.getValue().getDim(groupByDimName),
                 Collectors.counting()));
-        
+
         enterTime = System.currentTimeMillis() - enterTime;
-        LOGGER.debug("Group by {} count {} filter {} result {} using {} ms.", groupByDimName, indName, 
+        LOGGER.debug("Group by {} count {} filter {} result {} using {} ms.", groupByDimName, indName,
                 filterDims, group, enterTime);
-        LOGGER.info("Group by {} count {} filter {} result size {} using {} ms.", groupByDimName, indName, 
+        LOGGER.info("Group by {} count {} filter {} result size {} using {} ms.", groupByDimName, indName,
                 filterDims, group.size(), enterTime);
         return group;
     }
@@ -262,46 +252,51 @@ public class MiniCube implements Aggregations {
     public String toString() {
         return "MiniCube [factTable=" + factTable + "]";
     }
-    
+
     private RoaringBitmap buildBitMap(Set<Integer> set) {
-        
+
         RoaringBitmap result = new RoaringBitmap();
-        set.stream().forEach(x -> result.add(x));
+        set.forEach(result::add);
         return result;
     }
 
     @Override
     public Map<Integer, RoaringBitmap> distinct(String distinctName, boolean isDim,
-            String groupByDimName, Map<String, List<Integer>> filterDims) {
-        
+                                                String groupByDimName, Map<String, List<Integer>> filterDims) {
+
         long enterTime = System.currentTimeMillis();
+
+        Collector<Entry<Integer, Record>, ?, Set<Integer>> mapping = isDim ?
+                Collectors.mapping(p -> p.getValue().getDim(distinctName), Collectors.toSet()) :
+                Collectors.mapping(p -> p.getValue().getInd(distinctName).intValue(), Collectors.toSet());
+
+        Collector<Entry<Integer, Record>, ?, Map<Integer, Set<Integer>>> collector =
+                Collectors.groupingBy(p -> p.getValue().getDim(groupByDimName), mapping);
+
         Stream<Entry<Integer, Record>> stream = filter(filterDims);
-        Map<Integer, RoaringBitmap> group = new HashMap<Integer, RoaringBitmap>();
-        // FIXME: indicator's distinct???
-        stream.collect(Collectors.groupingBy(p->p.getValue().getDim(groupByDimName), 
-                Collectors.mapping(isDim ? p->p.getValue().getDim(distinctName) 
-                        : p->p.getValue().getInd(distinctName).intValue(), Collectors.toSet())))
-              .forEach((k, v) -> group.put(k, buildBitMap(v)));
+        Map<Integer, RoaringBitmap> group = new HashMap<>();
+        stream.collect(collector).forEach((k, v) -> group.put(k, buildBitMap(v)));
+
         enterTime = System.currentTimeMillis() - enterTime;
-        LOGGER.debug("Group by {} distinct {} filter {} result {} using {} ms.", groupByDimName, distinctName, 
+        LOGGER.debug("Group by {} distinct {} filter {} result {} using {} ms.", groupByDimName, distinctName,
                 filterDims, group, enterTime);
-        LOGGER.info("Group by {} distinct {} filter {} result size {} using {} ms.", groupByDimName, distinctName, 
+        LOGGER.info("Group by {} distinct {} filter {} result size {} using {} ms.", groupByDimName, distinctName,
                 filterDims, group.size(), enterTime);
         return group;
     }
 
     @Override
     public Map<Integer, Integer> discnt(String distinctName, boolean isDim, String groupByDimName,
-            Map<String, List<Integer>> filterDims) {
-        
+                                        Map<String, List<Integer>> filterDims) {
+
         // Do distinct
         Map<Integer, RoaringBitmap> distinct = distinct(distinctName, isDim, groupByDimName, filterDims);
         // Count it
         Map<Integer, Integer> result = distinct.entrySet().stream().collect(
-                Collectors.toMap(e -> e.getKey(), e -> e.getValue().getCardinality()));
-        
+                Collectors.toMap(Entry::getKey, e -> e.getValue().getCardinality()));
+
         LOGGER.debug("Distinct {} with filter {} results is {}", distinct, filterDims, result);
         return result;
     }
-    
+
 }

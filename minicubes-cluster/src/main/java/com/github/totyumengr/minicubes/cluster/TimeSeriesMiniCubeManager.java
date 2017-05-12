@@ -25,73 +25,76 @@ import com.github.totyumengr.minicubes.core.MiniCube;
 
 /**
  * It's design as a prophet in {@link MiniCube Cube World} that known all of things about {@link MiniCube MiniCubes}.
- * 
+ * <p>
  * <p>One {@link MiniCube} live in one JVM and the converse is the same, simply say: one-2-one relationship.
  * Id of cube will be assigned when it came into {@link TimeSeriesMiniCubeManager}, the format is: {cube date}::{cube name}@{node name}.
  * <ul>
- *   <li>cube date: time dimension member name, for example 20140201, 201402, 2014Q1, 2014H1, 2014. <code>?</code> if not be assigned yet.
- *   <li>cube name: In general it's contains dimension name and indicator name. <code>cluster name </code> if not assign.
- *   <li>node name: JVM name, {@link com.hazelcast.core.Member Hazelcast member} in our default implementation
+ * <li>cube date: time dimension member name, for example 20140201, 201402, 2014Q1, 2014H1, 2014. <code>?</code> if not be assigned yet.
+ * <li>cube name: In general it's contains dimension name and indicator name. <code>cluster name </code> if not assign.
+ * <li>node name: JVM name, {@link com.hazelcast.core.Member Hazelcast member} in our default implementation
  * </ul>
  * <p>Unified dimension is important in analysis scene, so one cube cluster has <b>only one</b> dimension group.
- * 
+ * <p>
  * <p>What means time-series cube? Shard by date time.
- * @author mengran
  *
+ * @author mengran
  */
 public interface TimeSeriesMiniCubeManager extends Aggregations {
-    
+
     /**
      * @return All of (assigned) cube names in cluster.
      * {@link #reassignRole(String, String)}
      */
     Collection<String> allCubeIds();
-    
+
     /**
      * @param cubeDate time-series field for locate cubes.
      * @return (assigned) cube IDs in cluster.
      * {@link #reassignRole(String, String)}
      */
     Collection<String> cubeIds(String cubeDate);
-    
+
     /**
      * Re-assign a role to local cube and it will request data from data source:
      * report back to cluster when completed, and then accept request.
-     * @param cubeId ID of cube
+     *
+     * @param cubeId     ID of cube
      * @param timeSeries role
      * @return new cube ID.
      */
     String reassignRole(String cubeId, String timeSeries);
-    
+
     /**
      * Incremental updates cube data of given time-series.
+     *
      * @param timeSeries role
-     * @param version merge data range column value
+     * @param version    merge data range column value
      * @return effect records count. Implementation can <b>don't</b> return actual value.
      */
     int merge(String timeSeries, int version);
-    
+
     /**
-     * @param task execute target
-     * @param <T> result type
-     * @param cubeIds execution on. Empty means <b>all members</b>
+     * @param task           execute target
+     * @param <T>            result type
+     * @param cubeIds        execution on. Empty means <b>all members</b>
      * @param timeoutSeconds timeout seconds. &lt;=0 will be reuse {@link Integer#MAX_VALUE}
      * @return result list of every cube
      */
     <T> List<T> execute(Callable<T> task, Collection<String> cubeIds, int timeoutSeconds);
-    
+
     /**
      * This is a stateful, wrapper method. Directly call {@link Aggregations}'s method means execute in <b>local</b> node.
      * So if you want to run in cluster, you <b>must</b> call this method first.
+     *
      * @param timeSeries set execution on
      * @return aggregation object
      */
     TimeSeriesMiniCubeManager aggs(String... timeSeries);
-    
+
     /**
      * @param parallelModel specify Java8 Stream mode.
-     * {@link Stream#isParallel()}
+     *                      {@link Stream#isParallel()}
      */
     void setMode(boolean parallelModel);
-    
+
 }

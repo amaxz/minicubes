@@ -88,38 +88,38 @@ import com.hazelcast.core.MultiExecutionCallback;
 
 /**
  * Implementation beyond {@link Hazelcast}.
- * 
+ * <p>
  * <p>{@link #factSourceSql} is important, we use the {@link ResultSetMetaData#getColumnLabel(int)} as meta data.
- * Please make sure to put dimension in <b>front</b> of measure, and you should classify the split 
+ * Please make sure to put dimension in <b>front</b> of measure, and you should classify the split
  * point by {@link #splitIndex index from 0}. On the other let it equal <code>-1</code> then we try to split by meta data:
  * start with <b>dim_</b>, we use it as dimension.
- * 
+ * <p>
  * <p>{@link #factSourceSql} must have a <code>?</code> so we will specify this when {@link #reassignRole(String, String)}
- * @author mengran
  *
+ * @author mengran
  */
 @Service
 @Configuration
 public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TimeSeriesMiniCubeManagerHzImpl.class);
-    
+
     private static final String DISTRIBUTED_EXECUTOR = "distributedExecutor";
-    
+
     private static final String MINICUBE_MANAGER = "minicubeManager";
-    
+
     private static final ThreadLocal<String[]> AGG_CONTEXT = new ThreadLocal<String[]>();
-    
+
     @Autowired
     private Environment env;
-    
+
     @Autowired
     private HazelcastInstance hazelcastInstance;
-    
+
     private String hzGroupName;
     @Value("${hazelcast.executor.timeout}")
     private int hzExecutorTimeout;
-    
+
     @Autowired
     private DataSource dataSource;
     @Value("${minicube.builder.mergeFlagColumn}")
@@ -128,34 +128,34 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
     private String factSourceSql;
     @Value("${minicube.measure.fromIndex}")
     private int splitIndex = -1;
-    
+
     /**
      * Manage target object.
      */
     private transient MiniCube miniCube;
     private static final AtomicInteger MINICUBE_PK = new AtomicInteger(0);
-    
+
     private ScheduledExecutorService handleNewMember = Executors.newSingleThreadScheduledExecutor();
-    
+
     @Bean
     public HazelcastInstance hazelcastServer() {
-        
+
         Config hazelcastConfig = new Config("minicubes-cluster");
         hazelcastConfig.setProperty("hazelcast.system.log.enabled", "false");
         hazelcastConfig.setProperty("hazelcast.logging.type", "slf4j");
         hazelcastConfig.setProperty("hazelcast.jmx", "true");
         hazelcastConfig.setProperty("hazelcast.jmx.detailed", "true");
         if (StringUtils.hasText(env.getRequiredProperty("hazelcast.operation.thread.count"))) {
-            hazelcastConfig.setProperty("hazelcast.operation.thread.count", 
+            hazelcastConfig.setProperty("hazelcast.operation.thread.count",
                     env.getRequiredProperty("hazelcast.operation.thread.count"));
         }
-        
-        hazelcastConfig.setGroupConfig(new GroupConfig(hzGroupName = env.getRequiredProperty("hazelcast.group.name"), 
+
+        hazelcastConfig.setGroupConfig(new GroupConfig(hzGroupName = env.getRequiredProperty("hazelcast.group.name"),
                 env.getRequiredProperty("hazelcast.group.password")));
         if (StringUtils.hasText(env.getRequiredProperty("hazelcast.mancenter.url"))) {
             hazelcastConfig.setManagementCenterConfig(new ManagementCenterConfig()
-                .setEnabled(true)
-                .setUrl(env.getRequiredProperty("hazelcast.mancenter.url")));
+                    .setEnabled(true)
+                    .setUrl(env.getRequiredProperty("hazelcast.mancenter.url")));
         }
         String hzMembers;
         JoinConfig joinConfig = new JoinConfig();
@@ -164,10 +164,10 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             joinConfig.setMulticastConfig(new MulticastConfig().setEnabled(true));
         } else {
             joinConfig.setMulticastConfig(new MulticastConfig().setEnabled(false))
-                .setTcpIpConfig(new TcpIpConfig().setEnabled(true).addMember(hzMembers));
+                    .setTcpIpConfig(new TcpIpConfig().setEnabled(true).addMember(hzMembers));
         }
         hazelcastConfig.setNetworkConfig(new NetworkConfig().setJoin(joinConfig));
-        
+
         // New ExecutorService
         int hzExecutorSize = -1;
         if ((hzExecutorSize = env.getRequiredProperty("hazelcast.executor.poolsize", Integer.class)) < 0) {
@@ -175,65 +175,65 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             LOGGER.info("Use cpu core count {} setting into executor service", hzExecutorSize);
         }
         hazelcastConfig.addExecutorConfig(new ExecutorConfig(DISTRIBUTED_EXECUTOR, hzExecutorSize)
-            .setQueueCapacity(env.getRequiredProperty("hazelcast.executor.queuecapacity", Integer.class)));
-        
+                .setQueueCapacity(env.getRequiredProperty("hazelcast.executor.queuecapacity", Integer.class)));
+
         // Add member event listener
         hazelcastConfig.addListenerConfig(new ListenerConfig().setImplementation(new MembershipListener() {
-            
+
             @Override
             public void memberRemoved(MembershipEvent membershipEvent) {
                 // Mean a member leave out of cluster.
-                LOGGER.info("A member {} has removed from cluster {}", 
+                LOGGER.info("A member {} has removed from cluster {}",
                         membershipEvent.getMember(), membershipEvent.getCluster().getClusterTime());
-                
+
                 IMap<String, String> miniCubeManager = hazelcastInstance.getMap(MINICUBE_MANAGER);
                 LOGGER.info("Minicube manager status {}", ObjectUtils.getDisplayString(miniCubeManager.entrySet()));
-                
+
                 // FIXME: Schedule to remove relationship after "long disconnect".
             }
-            
+
             @Override
             public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
                 // Let it empty.
             }
-            
+
             @Override
             public void memberAdded(MembershipEvent membershipEvent) {
                 // Mean a member join into cluster.
-                LOGGER.info("A member {} has joined into cluster {}, let it's self to claim a role.", 
+                LOGGER.info("A member {} has joined into cluster {}, let it's self to claim a role.",
                         membershipEvent.getMember(), membershipEvent.getCluster().getClusterTime());
             }
         }));
-        
+
         HazelcastInstance instance = Hazelcast.newHazelcastInstance(hazelcastConfig);
         // Put execute context
         instance.getUserContext().put("this", TimeSeriesMiniCubeManagerHzImpl.this);
-        
+
         // Handle new member
         LOGGER.info("Handle new member {} came in after 1 minute.", instance.getCluster().getLocalMember());
         // Set member's status to load-pending, this will effect #reassignRole
         instance.getCluster().getLocalMember().setBooleanAttribute("load-pending", true);
-        
+
         handleNewMember.schedule(new Runnable() {
-                @Override
-                public void run() {
-                    handleNewMember(instance, instance.getCluster().getLocalMember());
-                }
-            }, 60, TimeUnit.SECONDS);
-        
+            @Override
+            public void run() {
+                handleNewMember(instance, instance.getCluster().getLocalMember());
+            }
+        }, 60, TimeUnit.SECONDS);
+
         return instance;
     }
-    
+
     private void handleNewMember(HazelcastInstance instance, Member member) {
-        
+
         // Relationship between Member and MiniCube ID
         IMap<String, String> miniCubeManager = instance.getMap(MINICUBE_MANAGER);
         LOGGER.info("Minicube manager status {}", ObjectUtils.getDisplayString(miniCubeManager));
-        
+
         String key = member.getSocketAddress().toString();
         // FIXME: load-pending status need refactor
         instance.getCluster().getLocalMember().setBooleanAttribute("load-pending", false);
-        
+
         if (miniCubeManager.containsKey(key) && !miniCubeManager.get(key).startsWith("?")) {
             // Maybe node-restart
             LOGGER.info("A node{} restarted, so we need rebuild cube{}", key, miniCubeManager.get(key));
@@ -243,18 +243,18 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             // First time join into cluster
             String id = "?" + "::" + hzGroupName + "@" + key;
             miniCubeManager.put(key, id);
-            
+
             member.setStringAttribute("cubeId", id);
             LOGGER.info("Add {} into cluster {}", id, hzGroupName);
         }
         LOGGER.info("Set load-pending status to false, enable reassign feature on {}", member);
     }
-    
+
     // ------------------------------ Implementation ------------------------------
 
     @Override
     public <T> List<T> execute(Callable<T> task, Collection<String> cubeIds, int timeoutSeconds) {
-        
+
         Set<Member> members = hazelcastInstance.getCluster().getMembers();
         Set<Member> selected = new LinkedHashSet<Member>();
         if (cubeIds != null && !cubeIds.isEmpty()) {
@@ -268,10 +268,10 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             selected.addAll(members);
             LOGGER.warn("Select all members {} in cluster to execute on.", selected);
         }
-        
+
         final int size = selected.size();
         LOGGER.debug("Start to run task {} on {}", task, selected);
-        
+
         // Call distributed execute service to run it.
         final List<T> result = new ArrayList<T>(selected.size());
         final List<Exception> exceptionResult = new ArrayList<Exception>();
@@ -279,7 +279,7 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
         AtomicInteger completedCount = new AtomicInteger(0);
         hazelcastInstance.getExecutorService(DISTRIBUTED_EXECUTOR).submitToMembers(task, selected,
                 new MultiExecutionCallback() {
-                    
+
                     @SuppressWarnings("unchecked")
                     @Override
                     public void onResponse(Member member, Object value) {
@@ -291,50 +291,50 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                             result.add((T) value);
                         }
                     }
-                    
+
                     @Override
                     public void onComplete(Map<Member, Object> values) {
                         LOGGER.info("Successfully execute {} on cluster, collect {} result.", task, values.size());
                         cdl.countDown();
                     }
                 });
-        
+
         if (completedCount.get() < size) {
             // FIXME: When some task do not executed. Maybe reject? error?
         }
-        
+
         try {
             cdl.await(timeoutSeconds > 0 ? timeoutSeconds : Integer.MAX_VALUE, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             // Ignore
         }
-        
+
         // Exception handled
         if (!exceptionResult.isEmpty()) {
-            LOGGER.error("{} exceptions occurred when try to execute {} on {}", exceptionResult.size(), task, 
+            LOGGER.error("{} exceptions occurred when try to execute {} on {}", exceptionResult.size(), task,
                     ObjectUtils.getDisplayString(selected));
-            for (int i = 0; i < exceptionResult.size(); i++) {
-                LOGGER.error("#1 exception === ", exceptionResult.get(i));
+            for (Exception anExceptionResult : exceptionResult) {
+                LOGGER.error("#1 exception === ", anExceptionResult);
             }
             throw new RuntimeException("Exception occurred when try to execute, please see detail logs above.");
         }
-        
+
         return result;
     }
-    
+
     private static abstract class CubeBuilder implements Callable<String>, HazelcastInstanceAware, Serializable {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         protected transient HazelcastInstance instance;
         protected transient TimeSeriesMiniCubeManagerHzImpl impl;
-        
+
         protected String cubeId;
         protected String timeSeries;
-        
+
         public CubeBuilder(String cubeId, String timeSeries) {
             super();
             this.cubeId = cubeId;
@@ -346,15 +346,15 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             instance = hazelcastInstance;
             impl = (TimeSeriesMiniCubeManagerHzImpl) instance.getUserContext().get("this");
         }
-        
+
         protected String pre() {
             return null;
         }
-        
+
         protected String post(MiniCube newMiniCube) {
             return null;
         }
-        
+
         protected String sql() {
             return impl.factSourceSql;
         }
@@ -367,15 +367,15 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                 throw new UnsupportedOperationException("Assignment " + cubeId + " " + timeSeries
                         + "only permitted to run in local member.");
             }
-            
+
             String forReturn = pre();
             if (StringUtils.hasLength(forReturn)) {
                 LOGGER.info("Don't fetch data and directly return {} {}.", cubeId, timeSeries);
                 return forReturn;
             }
-            
+
             LOGGER.info("Start fetching data and building cube {}, {}", cubeId, timeSeries);
-            
+
             JdbcTemplate template = new JdbcTemplate(impl.dataSource);
             FactTableBuilder builder = new FactTableBuilder();
             boolean builded = false;
@@ -384,7 +384,7 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                 builder.build(timeSeries);
                 AtomicBoolean processMeta = new AtomicBoolean(true);
                 AtomicInteger actualSplitIndex = new AtomicInteger();
-                
+
                 List<SqlParameterValue> params = new ArrayList<SqlParameterValue>();
                 if (timeSeries.length() == 8 && timeSeries.toUpperCase().contains("X")) {
                     // Means one XUN's data
@@ -395,17 +395,17 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                     SqlParameterValue start = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + (s > 9 ? s : ("0" + s)));
                     SqlParameterValue end = null;
                     switch (x) {
-                    case 1:
-                        end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "10");
-                        break;
-                    case 2:
-                        end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "20");
-                        break;
-                    case 3:
-                        end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "31");
-                        break;
-                    default:
-                        break;
+                        case 1:
+                            end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "10");
+                            break;
+                        case 2:
+                            end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "20");
+                            break;
+                        case 3:
+                            end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, m + "31");
+                            break;
+                        default:
+                            break;
                     }
                     params.add(start);
                     params.add(end);
@@ -426,7 +426,7 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                     Assert.isTrue(q > 0 && q < 5, "Only support pattern yyyyQ[1-4]. " + timeSeries);
                     int m = ((q - 1) * 3 + 1);
                     // Fix #3
-                    SqlParameterValue start = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, y + (m > 9 ?  m : ("0" + m)) + "01");
+                    SqlParameterValue start = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, y + (m > 9 ? m : ("0" + m)) + "01");
                     m = (q * 3);
                     SqlParameterValue end = new SqlParameterValue(SqlTypeValue.TYPE_UNKNOWN, y + (m > 9 ? m : ("0" + m)) + "31");
                     params.add(start);
@@ -441,92 +441,92 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                                 return t.getValue();
                             }
                         }).reduce("", (x, y) -> x + "~" + y));
-                
+
                 template.query(new PreparedStatementCreator() {
-                    
-                        @Override
-                        public PreparedStatement createPreparedStatement(Connection con)
-                                throws SQLException {
-                            
-                            PreparedStatement stmt = con.prepareStatement(sql(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-                            // MySQL steaming result-set http://dev.mysql.com/doc/connector-j/en/connector-j-reference-implementation-notes.html
-                            // http://stackoverflow.com/questions/2095490/how-to-manage-a-large-dataset-using-spring-mysql-and-rowcallbackhandler
-                            try {
-                                stmt.setFetchSize(Integer.MIN_VALUE);
-                                LOGGER.info("Set stream feature of MySQL. {}", stmt.getFetchSize());
-                            } catch (Exception e) {
-                                // Ignore maybe do not supported.
-                            }
-                            for (int i = 0; i < params.size(); i++) {
-                                StatementCreatorUtils.setParameterValue(stmt, i + 1, params.get(i), params.get(i).getValue());
-                            }
-                            return stmt;
-                        }
-                    }, new RowCallbackHandler() {
-    
-                        @Override
-                        public void processRow(ResultSet rs) throws SQLException {
-                            if (processMeta.get()) {
-                                ResultSetMetaData meta = rs.getMetaData();
-                                int dimSize = 0;
-                                if (impl.splitIndex < 0) {
-                                    LOGGER.debug("Not specify splitIndex so we guess by column labels");
-                                    for (int i = 1; i <= meta.getColumnCount(); i++) {
-                                        if (meta.getColumnLabel(i).toLowerCase().startsWith("dim_")) {
-                                            LOGGER.debug("Add dim column {}", meta.getColumnLabel(i));
-                                            builder.addDimColumns(Arrays.asList(new String[] {meta.getColumnLabel(i)}));
-                                            dimSize++;
-                                        } else {
-                                            LOGGER.debug("Add measure column {}", meta.getColumnLabel(i));
-                                            builder.addIndColumns(Arrays.asList(new String[] {meta.getColumnLabel(i)}));
-                                        }
-                                    }
-                                } else {
-                                    LOGGER.debug("Specify splitIndex {} means measure start.");
-                                    for (int i = 1; i <= meta.getColumnCount(); i++) {
-                                        if (i < impl.splitIndex) {
-                                            LOGGER.debug("Add dim column {}", meta.getColumnLabel(i));
-                                            builder.addDimColumns(Arrays.asList(new String[] {meta.getColumnLabel(i)}));
-                                            dimSize++;
-                                        } else {
-                                            LOGGER.debug("Add measure column {}", meta.getColumnLabel(i));
-                                            builder.addIndColumns(Arrays.asList(new String[] {meta.getColumnLabel(i)}));
-                                        }
-                                    }
-                                }
-                                actualSplitIndex.set(dimSize);
-                                // End meta setting
-                                processMeta.set(false);
-                            }
-                            
-                            // Add fact data
-                            List<Integer> dimDatas = new ArrayList<Integer>(actualSplitIndex.get());
-                            List<DoubleDouble> indDatas = new ArrayList<DoubleDouble>(rs.getMetaData().getColumnCount() - dimDatas.size());
-                            for (int i = 0; i < rs.getMetaData().getColumnCount(); i++) {
-                                if (i < actualSplitIndex.get()) {
-                                    dimDatas.add(rs.getInt(i + 1));
-                                } else {
-                                    indDatas.add(DoubleDouble.valueOf(rs.getDouble(i + 1)));
-                                }
-                            }
-                            rowCount.incrementAndGet();
-                            int pk = MINICUBE_PK.incrementAndGet();
-                            builder.addDimDatas(pk, dimDatas);
-                            builder.addIndDatas(pk, indDatas);
-                            
-                            if (rowCount.get() % 1000000 == 0) {
-                                LOGGER.info("Loaded {} records into cube.", rowCount.get());
-                            }
-                        }
-                    }
+
+                                   @Override
+                                   public PreparedStatement createPreparedStatement(Connection con)
+                                           throws SQLException {
+
+                                       PreparedStatement stmt = con.prepareStatement(sql(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+                                       // MySQL steaming result-set http://dev.mysql.com/doc/connector-j/en/connector-j-reference-implementation-notes.html
+                                       // http://stackoverflow.com/questions/2095490/how-to-manage-a-large-dataset-using-spring-mysql-and-rowcallbackhandler
+                                       try {
+                                           stmt.setFetchSize(Integer.MIN_VALUE);
+                                           LOGGER.info("Set stream feature of MySQL. {}", stmt.getFetchSize());
+                                       } catch (Exception e) {
+                                           // Ignore maybe do not supported.
+                                       }
+                                       for (int i = 0; i < params.size(); i++) {
+                                           StatementCreatorUtils.setParameterValue(stmt, i + 1, params.get(i), params.get(i).getValue());
+                                       }
+                                       return stmt;
+                                   }
+                               }, new RowCallbackHandler() {
+
+                                   @Override
+                                   public void processRow(ResultSet rs) throws SQLException {
+                                       if (processMeta.get()) {
+                                           ResultSetMetaData meta = rs.getMetaData();
+                                           int dimSize = 0;
+                                           if (impl.splitIndex < 0) {
+                                               LOGGER.debug("Not specify splitIndex so we guess by column labels");
+                                               for (int i = 1; i <= meta.getColumnCount(); i++) {
+                                                   if (meta.getColumnLabel(i).toLowerCase().startsWith("dim_")) {
+                                                       LOGGER.debug("Add dim column {}", meta.getColumnLabel(i));
+                                                       builder.addDimColumns(Arrays.asList(new String[]{meta.getColumnLabel(i)}));
+                                                       dimSize++;
+                                                   } else {
+                                                       LOGGER.debug("Add measure column {}", meta.getColumnLabel(i));
+                                                       builder.addIndColumns(Arrays.asList(new String[]{meta.getColumnLabel(i)}));
+                                                   }
+                                               }
+                                           } else {
+                                               LOGGER.debug("Specify splitIndex {} means measure start.");
+                                               for (int i = 1; i <= meta.getColumnCount(); i++) {
+                                                   if (i < impl.splitIndex) {
+                                                       LOGGER.debug("Add dim column {}", meta.getColumnLabel(i));
+                                                       builder.addDimColumns(Arrays.asList(new String[]{meta.getColumnLabel(i)}));
+                                                       dimSize++;
+                                                   } else {
+                                                       LOGGER.debug("Add measure column {}", meta.getColumnLabel(i));
+                                                       builder.addIndColumns(Arrays.asList(new String[]{meta.getColumnLabel(i)}));
+                                                   }
+                                               }
+                                           }
+                                           actualSplitIndex.set(dimSize);
+                                           // End meta setting
+                                           processMeta.set(false);
+                                       }
+
+                                       // Add fact data
+                                       List<Integer> dimDatas = new ArrayList<Integer>(actualSplitIndex.get());
+                                       List<DoubleDouble> indDatas = new ArrayList<DoubleDouble>(rs.getMetaData().getColumnCount() - dimDatas.size());
+                                       for (int i = 0; i < rs.getMetaData().getColumnCount(); i++) {
+                                           if (i < actualSplitIndex.get()) {
+                                               dimDatas.add(rs.getInt(i + 1));
+                                           } else {
+                                               indDatas.add(DoubleDouble.valueOf(rs.getDouble(i + 1)));
+                                           }
+                                       }
+                                       rowCount.incrementAndGet();
+                                       int pk = MINICUBE_PK.incrementAndGet();
+                                       builder.addDimDatas(pk, dimDatas);
+                                       builder.addIndDatas(pk, indDatas);
+
+                                       if (rowCount.get() % 1000000 == 0) {
+                                           LOGGER.info("Loaded {} records into cube.", rowCount.get());
+                                       }
+                                   }
+                               }
                 );
-                
+
                 // Ending build operation
                 MiniCube newMiniCube = new MiniCube(builder.done());
                 builded = true;
-                
+
                 String newCubeId = post(newMiniCube);
-                
+
                 return newCubeId;
             } finally {
                 if (!builded) {
@@ -534,20 +534,20 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                 }
             }
         }
-        
+
     }
-    
+
     private static class Assign extends CubeBuilder implements Callable<String>, HazelcastInstanceAware, Serializable {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         public Assign(String cubeId, String timeSeries) {
             super(cubeId, timeSeries);
         }
-        
+
         @Override
         protected String pre() {
             Member localMember = instance.getCluster().getLocalMember();
@@ -561,64 +561,64 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                 LOGGER.warn("Only change relationship {} {} when load-pending status.", member, newCubeId);
                 return newCubeId;
             }
-            
+
             return null;
         }
 
         @Override
         protected String post(MiniCube newMiniCube) {
-            
+
             Member localMember = instance.getCluster().getLocalMember();
             String member = cubeId.split("@")[1];
-            
+
             // Ending build operation
             impl.miniCube = newMiniCube;
-            
+
             String newCubeId = timeSeries + "::" + impl.hzGroupName + "@" + member;
             LOGGER.info("Success to build cube {} from {} and {}", newCubeId, cubeId, timeSeries);
-            
+
             // Put relationship into member
             localMember.setStringAttribute("cubeId", newCubeId);
             IMap<String, String> miniCubeManager = instance.getMap(MINICUBE_MANAGER);
             miniCubeManager.put(member, newCubeId);
-            
+
             return newCubeId;
         }
-        
+
     }
 
     @Override
     public String reassignRole(String cubeId, String timeSeries) {
-        
+
         LOGGER.info("Starting to assign {} to calculating {} calculation.", cubeId, timeSeries);
-        
+
         // FIXME: Validation with Spring MVC, so we do not double-check it. Enhancement in future version.
-        
+
         if (cubeId.startsWith("?")) {
             LOGGER.debug("First time assign {}", cubeId);
         }
         // Do it in self VM
-        List<String> result = execute(new Assign(cubeId, timeSeries), Arrays.asList(new String[] {cubeId}), -1);
+        List<String> result = execute(new Assign(cubeId, timeSeries), Arrays.asList(new String[]{cubeId}), -1);
         Assert.hasText(result.get(0), "Fail to assign " + cubeId + " " + timeSeries);
-        
+
         LOGGER.info("Successfully reassign role {}", result.get(0));
         return result.get(0);
     }
-    
+
     private static class Merge extends CubeBuilder implements Callable<String>, HazelcastInstanceAware, Serializable {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         private int version;
-        
+
         public Merge(String cubeId, String timeSeries, int version) {
             super(cubeId, timeSeries);
             this.version = version;
         }
-        
+
         @Override
         protected String pre() {
             return null;
@@ -626,50 +626,50 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         protected String post(MiniCube newMiniCube) {
-            
+
             // Ending build operation
             impl.miniCube.merge(newMiniCube);
-            
+
             LOGGER.info("Success to merge cube {} into {} of ", newMiniCube, impl.miniCube, timeSeries);
             return cubeId;
         }
-        
+
         @Override
         protected String sql() {
-            
+
             String originalSql = super.sql();
             // FIXME: Weak logic of SQL
             String sql = originalSql + " and " + impl.mergeFlagColumn + " = " + version;
             LOGGER.info("Merge data range {} of {}.", sql, timeSeries);
             return sql;
         }
-        
+
     }
-    
+
     @Override
     public int merge(String timeSeries, int version) {
-        
+
         LOGGER.info("Starting to merge {}...", timeSeries);
         try {
             Collection<String> cubeIds = cubeIds(timeSeries);
-            
+
             // FIXME: When support #3, this assert will be fail.
             Assert.isTrue(cubeIds.size() == 1, "Current version have not support multiple cubes of one time-series.");
-            
+
             // Do execute
             List<String> results = execute(new Merge(cubeIds.iterator().next(), timeSeries, version), cubeIds, hzExecutorTimeout);
             LOGGER.info("Merge {} of {} sucessfully, result is {}.", timeSeries, version, results);
         } finally {
             AGG_CONTEXT.remove();
         }
-        
+
         // FIXME: Current version we don't return this value.
         return -1;
     }
 
     @Override
     public Collection<String> allCubeIds() {
-        
+
         Set<Member> members = hazelcastInstance.getCluster().getMembers();
         // Exact match
         return members.stream().filter(e -> e.getStringAttribute("cubeId") != null)
@@ -678,22 +678,22 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
     @Override
     public Collection<String> cubeIds(String cubeDate) {
-        
+
         Set<Member> members = hazelcastInstance.getCluster().getMembers();
         // Exact match
         return members.stream().filter(e -> e.getStringAttribute("cubeId").split("::")[0].startsWith(cubeDate))
                 .map(e -> e.getStringAttribute("cubeId")).collect(Collectors.toList());
     }
-    
+
     private static class Mode extends Executee implements Callable<Void> {
-        
+
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         private boolean parallelMode;
-        
+
         public Mode(boolean parallelMode) {
             super();
             this.parallelMode = parallelMode;
@@ -701,22 +701,22 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public Void call() throws Exception {
-            
+
             LOGGER.info("Set model {} on {}", parallelMode, instance.getCluster().getLocalMember());
             if (impl.miniCube != null) {
                 impl.miniCube.setParallelMode(parallelMode);
             }
             return null;
         }
-        
+
     }
-    
+
     @Override
     public void setMode(boolean parallelModel) {
-        
+
         try {
             Set<String> cubeIds = cubeIds();
-            
+
             // Do execute
             execute(new Mode(parallelModel), cubeIds, hzExecutorTimeout);
             LOGGER.info("Set stream's mode {} on {}.", parallelModel, cubeIds);
@@ -724,16 +724,16 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             AGG_CONTEXT.remove();
         }
     }
-    
+
     @Override
     public TimeSeriesMiniCubeManager aggs(String... timeSeries) {
-        
+
         AGG_CONTEXT.set(timeSeries);
         return this;
     }
-    
+
     private Set<String> cubeIds() {
-        
+
         Set<String> cubeIds = new LinkedHashSet<String>();
         String[] timeSeries = AGG_CONTEXT.get();
         if (timeSeries == null || timeSeries.length == 0) {
@@ -748,20 +748,20 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             }
         }
         LOGGER.info("Agg on cubes {}", ObjectUtils.getDisplayString(cubeIds));
-        
+
         return cubeIds;
     }
-    
+
     private static abstract class Executee implements HazelcastInstanceAware, Serializable {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         protected transient HazelcastInstance instance;
         protected transient TimeSeriesMiniCubeManagerHzImpl impl;
-        
+
         public Executee() {
             super();
         }
@@ -771,18 +771,18 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             this.instance = hazelcastInstance;
             impl = (TimeSeriesMiniCubeManagerHzImpl) instance.getUserContext().get("this");
         }
-        
+
     }
-    
+
     private static class Sum extends Executee implements Callable<BigDecimal> {
-        
+
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
         private String indName;
         private Map<String, List<Integer>> filterDims;
-        
+
         public Sum(String indName, Map<String, List<Integer>> filterDims) {
             super();
             this.indName = indName;
@@ -791,55 +791,55 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public BigDecimal call() throws Exception {
-            
+
             LOGGER.info("Sum on {}", instance.getCluster().getLocalMember());
             return impl.miniCube == null ? new BigDecimal(0) : impl.miniCube.sum(indName, filterDims);
         }
-        
+
     }
 
     @Override
     public BigDecimal sum(String indName) {
-        
+
         return sum(indName, null);
     }
 
     @Override
     public BigDecimal sum(String indName, Map<String, List<Integer>> filterDims) {
-        
+
         try {
             Set<String> cubeIds = cubeIds();
-            
+
             // Do execute
             List<BigDecimal> results = execute(new Sum(indName, filterDims), cubeIds, hzExecutorTimeout);
             LOGGER.debug("Sum {} on {} results is {}", indName, cubeIds, results);
-            
+
             BigDecimal result = results.stream().reduce(new BigDecimal(0), (x, y) -> x.add(y))
                     .setScale(IND_SCALE, BigDecimal.ROUND_HALF_UP);
             LOGGER.info("Sum {} on {} result is {}", indName, cubeIds, result);
-            
+
             return result;
         } finally {
             AGG_CONTEXT.remove();
         }
     }
-    
+
     /**
      * FIXME: Need re-design
-     * @author mengran
      *
+     * @author mengran
      */
     private static class Sum2 extends Executee implements Callable<Map<Integer, BigDecimal>> {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         private String indName;
         private Map<String, List<Integer>> filterDims;
         private String groupDimName;
-        
+
         public Sum2(String indName, String groupDimName, Map<String, List<Integer>> filterDims) {
             super();
             this.indName = indName;
@@ -849,25 +849,25 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public Map<Integer, BigDecimal> call() throws Exception {
-            
+
             LOGGER.info("Sum on {}", instance.getCluster().getLocalMember());
             return impl.miniCube == null ? null : impl.miniCube.sum(indName, groupDimName, filterDims);
         }
-        
+
     }
 
     @Override
     public Map<Integer, BigDecimal> sum(String indName, String groupByDimName,
-            Map<String, List<Integer>> filterDims) {
-        
+                                        Map<String, List<Integer>> filterDims) {
+
         try {
             Set<String> cubeIds = cubeIds();
-            
+
             // Do execute
-            List<Map<Integer, BigDecimal>> results = execute(new Sum2(indName, groupByDimName, filterDims), 
+            List<Map<Integer, BigDecimal>> results = execute(new Sum2(indName, groupByDimName, filterDims),
                     cubeIds, hzExecutorTimeout);
             LOGGER.debug("Group {} on {} with filter {} results is {}", indName, cubeIds, filterDims, results);
-            
+
             Map<Integer, BigDecimal> result = new HashMap<Integer, BigDecimal>();
             results.stream().forEach(new Consumer<Map<Integer, BigDecimal>>() {
 
@@ -877,22 +877,22 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
                 }
             });
             LOGGER.debug("Sum {} on {} with filter {} results is {}", indName, cubeIds, filterDims, result);
-            
+
             return result;
         } finally {
             AGG_CONTEXT.remove();
         }
     }
-    
+
     private static class Count extends Executee implements Callable<Long> {
-        
+
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
         private String indName;
         private Map<String, List<Integer>> filterDims;
-        
+
         public Count(String indName, Map<String, List<Integer>> filterDims) {
             super();
             this.indName = indName;
@@ -901,55 +901,55 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public Long call() throws Exception {
-            
+
             LOGGER.info("Count on {}", instance.getCluster().getLocalMember());
             return impl.miniCube == null ? 0L : impl.miniCube.count(indName, filterDims);
         }
-        
+
     }
 
-    
+
     @Override
     public long count(String indName) {
-        
+
         return count(indName, null);
     }
 
     @Override
     public long count(String indName, Map<String, List<Integer>> filterDims) {
-        
+
         try {
             Set<String> cubeIds = cubeIds();
-            
+
             // Do execute
             List<Long> results = execute(new Count(indName, filterDims), cubeIds, hzExecutorTimeout);
             LOGGER.debug("Count {} on {} results is {}", indName, cubeIds, results);
-            
+
             Long result = results.stream().reduce(0L, (x, y) -> x + y);
             LOGGER.info("Count {} on {} result is {}", indName, cubeIds, result);
-            
+
             return result;
         } finally {
             AGG_CONTEXT.remove();
         }
     }
-    
+
     /**
      * FIXME: Need re-design
-     * @author mengran
      *
+     * @author mengran
      */
     private static class Count2 extends Executee implements Callable<Map<Integer, Long>> {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         private String indName;
         private Map<String, List<Integer>> filterDims;
         private String groupDimName;
-        
+
         public Count2(String indName, String groupDimName, Map<String, List<Integer>> filterDims) {
             super();
             this.indName = indName;
@@ -959,57 +959,49 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public Map<Integer, Long> call() throws Exception {
-            
+
             LOGGER.info("Sum on {}", instance.getCluster().getLocalMember());
             return impl.miniCube == null ? null : impl.miniCube.count(indName, groupDimName, filterDims);
         }
-        
+
     }
 
     @Override
     public Map<Integer, Long> count(String indName, String groupByDimName,
-            Map<String, List<Integer>> filterDims) {
-        
+                                    Map<String, List<Integer>> filterDims) {
+
         try {
             Set<String> cubeIds = cubeIds();
-            
-            // Do execute
-            List<Map<Integer, Long>> results = execute(new Count2(indName, groupByDimName, filterDims), 
-                    cubeIds, hzExecutorTimeout);
-            LOGGER.debug("Group counting {} on {} with filter {} results is {}", indName, cubeIds, filterDims, results);
-            
-            Map<Integer, Long> result = new HashMap<Integer, Long>();
-            results.stream().forEach(new Consumer<Map<Integer, Long>>() {
 
-                @Override
-                public void accept(Map<Integer, Long> t) {
-                    t.forEach((k, v) -> result.merge(k, v, Long::sum));
-                }
-            });
+            // Do execute
+            List<Map<Integer, Long>> results = execute(new Count2(indName, groupByDimName, filterDims), cubeIds, hzExecutorTimeout);
+            LOGGER.debug("Group counting {} on {} with filter {} results is {}", indName, cubeIds, filterDims, results);
+
+            Map<Integer, Long> result = new HashMap<>();
+            results.forEach(t -> t.forEach((k, v) -> result.merge(k, v, Long::sum)));
             LOGGER.debug("Count {} on {} with filter {} results is {}", indName, cubeIds, filterDims, result);
-            
+
             return result;
         } finally {
             AGG_CONTEXT.remove();
         }
     }
-    
+
     /**
      * @author mengran
-     *
      */
     private static class Distinct extends Executee implements Callable<Map<Integer, RoaringBitmap>> {
 
         /**
-         * 
+         *
          */
         private static final long serialVersionUID = 1L;
-        
+
         private String indName;
         private Map<String, List<Integer>> filterDims;
         private String groupDimName;
         private boolean isDim;
-        
+
         public Distinct(String indName, boolean isDim, String groupDimName, Map<String, List<Integer>> filterDims) {
             super();
             this.indName = indName;
@@ -1020,39 +1012,28 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
         @Override
         public Map<Integer, RoaringBitmap> call() throws Exception {
-            
+
             LOGGER.info("Distinct on {}", instance.getCluster().getLocalMember());
             return impl.miniCube == null ? null : impl.miniCube.distinct(indName, isDim, groupDimName, filterDims);
         }
-        
+
     }
 
     @Override
     public Map<Integer, RoaringBitmap> distinct(String distinctName, boolean isDim,
-            String groupByDimName, Map<String, List<Integer>> filterDims) {
-        
+                                                String groupByDimName, Map<String, List<Integer>> filterDims) {
+
         try {
             Set<String> cubeIds = cubeIds();
-            
+
             // Do execute
-            List<Map<Integer, RoaringBitmap>> results = execute(new Distinct(distinctName, isDim, groupByDimName, filterDims), 
+            List<Map<Integer, RoaringBitmap>> results = execute(new Distinct(distinctName, isDim, groupByDimName, filterDims),
                     cubeIds, hzExecutorTimeout);
             LOGGER.debug("Distinct {} on {} with filter {} results is {}", distinctName, cubeIds, filterDims, results);
-            
-            Map<Integer, RoaringBitmap> result = new HashMap<Integer, RoaringBitmap>(results.size());
-            results.stream().forEach(new Consumer<Map<Integer, RoaringBitmap>>() {
 
-                @Override
-                public void accept(Map<Integer, RoaringBitmap> t) {
-                    t.forEach((k, v) -> result.merge(k, v, new BiFunction<RoaringBitmap, RoaringBitmap, RoaringBitmap>() {
-
-                        @Override
-                        public RoaringBitmap apply(RoaringBitmap t, RoaringBitmap u) {
-                            return RoaringBitmap.or(t, u);
-                        }
-                    }));
-                }
-            });
+            Map<Integer, RoaringBitmap> result = new HashMap<>(results.size());
+            results.forEach(t -> t.forEach((k, v) ->
+                    result.merge(k, v, (BiFunction<RoaringBitmap, RoaringBitmap, RoaringBitmap>) (t1, u) -> RoaringBitmap.or(t1, u))));
             LOGGER.debug("Distinct {} on {} with filter {} results is {}", distinctName, cubeIds, filterDims, result);
             return result;
         } finally {
@@ -1062,8 +1043,8 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
 
     @Override
     public Map<Integer, Integer> discnt(String distinctName, boolean isDim, String groupByDimName,
-            Map<String, List<Integer>> filterDims) {
-        
+                                        Map<String, List<Integer>> filterDims) {
+
         try {
             Map<Integer, RoaringBitmap> distinct = distinct(distinctName, isDim, groupByDimName, filterDims);
             // Count it.
@@ -1076,5 +1057,5 @@ public class TimeSeriesMiniCubeManagerHzImpl implements TimeSeriesMiniCubeManage
             AGG_CONTEXT.remove();
         }
     }
-    
+
 }

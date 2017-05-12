@@ -37,11 +37,11 @@ import javafx.scene.control.TextArea;
 
 /**
  * CPU-idel controller class
- * @author mengran
  *
+ * @author mengran
  */
 public class CpuIdelController {
-    
+
     @FXML
     private TextArea url;
     @FXML
@@ -56,14 +56,14 @@ public class CpuIdelController {
     private CategoryAxis cpuIdelLineChartxAxis;
     @FXML
     private NumberAxis cpuIdelLineChartyAxis;
-    
+
     private ScheduledExecutorService fetchCpuIdelData = new ScheduledThreadPoolExecutor(1);
     private ScheduledExecutorService redrawCpuIdelChart = new ScheduledThreadPoolExecutor(1);
-    
+
     private LinkedBlockingQueue<Integer> cpuIdelDataQueue = new LinkedBlockingQueue<>();
-    
+
     private class CpuIdelCollector implements Runnable {
-        
+
         @Override
         public void run() {
             int y = getYAxis();
@@ -74,26 +74,26 @@ public class CpuIdelController {
             }
             System.out.println("insert a point to queue " + y);
         }
-        
+
     }
-    
+
     private Integer getYAxis() {
-        
+
         return new Random().nextInt(100);
     }
-    
+
     @FXML
     private void initialize() {
-        
+
         cpuIdelLineChart.getData().add(new Series<String, Integer>());
-        
+
         // Start to fetch data for line chart...
         fetchCpuIdelData.scheduleAtFixedRate(new CpuIdelCollector(), 100, 500, TimeUnit.MILLISECONDS);
-        
+
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("mm:ss");
         // Start to redraw line chart...
         Runnable t = new Runnable() {
-            
+
             @Override
             public void run() {
                 Integer cpuIdel = -1;
@@ -104,7 +104,7 @@ public class CpuIdelController {
                 }
                 if (cpuIdel >= 0) {
                     try {
-                        ObservableList<XYChart.Data<String,Integer>> seriesData = cpuIdelLineChart.getData().get(0).getData();
+                        ObservableList<XYChart.Data<String, Integer>> seriesData = cpuIdelLineChart.getData().get(0).getData();
                         seriesData.add(new XYChart.Data<String, Integer>(formatter.format(LocalDateTime.now()), cpuIdel));
                         cpuIdelLineChart.getData().get(0).setData(seriesData);
                     } catch (Exception e) {
@@ -114,23 +114,23 @@ public class CpuIdelController {
             }
         };
         redrawCpuIdelChart.scheduleAtFixedRate(new Runnable() {
-            
+
             @Override
             public void run() {
                 Platform.runLater(t);
             }
         }, 1, 1, TimeUnit.SECONDS);
-        
+
         System.out.println("Working...");
     }
-    
+
     @FXML
     private void startOnAction() {
-        
+
     }
-    
+
     @FXML
     private void endOnAction() {
-        
+
     }
 }
